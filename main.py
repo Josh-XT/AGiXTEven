@@ -127,11 +127,12 @@ def process_text(manager, text, agent_name="XT"):
     thinking_thread.start()
 
     # Make the blocking call to AGiXT
-    agixt = AGiXTSDK()
+    date_string = datetime.now().strftime("%Y-%m-%d")
+    agixt = AGiXTSDK(base_uri="http://localhost:7437", api_key="just-a-test")
     response = agixt.prompt_agent(
         agent_name=agent_name,
         prompt_name="Think About It",
-        prompt_args={"user_input": text},
+        prompt_args={"user_input": text, "conversation_name": date_string},
     )
 
     # Signal the periodic thread to stop and wait for it to finish
