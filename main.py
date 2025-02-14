@@ -1,16 +1,11 @@
-import os
 import time
 import asyncio
 from RealtimeSTT import AudioToTextRecorder
-from dotenv import load_dotenv
 from even_glasses.bluetooth_manager import GlassesManager
 from even_glasses.commands import send_text
 from even_glasses.notification_handlers import handle_incoming_notification
 from agixtsdk import AGiXTSDK
 import time
-
-# Load environment variables
-load_dotenv()
 
 
 def transcribe_words(alignment_data, group_size=3, time_shift=1.0):
@@ -134,14 +129,14 @@ def display_message(manager, alignment_data, group_size=7):
         time.sleep(group[-1]["end_time"] - group[0]["start_time"])
 
 
-def process_text(manager, text):
+def process_text(manager, text, agent_name="XT"):
     print(f"Transcribed text: {text}")
     asyncio.run(send_text(manager=manager, text_message=text, duration=1))
     # Send text to AGiXT
     agixt = AGiXTSDK()
     asyncio.run(send_text(manager=manager, text_message="Thinking...", duration=2))
     response = agixt.prompt_agent(
-        agent_name=os.getenv("AGENT_NAME", "XT"),
+        agent_name=agent_name,
         prompt_name="Think About It",
         prompt_args={"user_input": text},
     )
@@ -165,7 +160,9 @@ async def main():
         print('Say "Jarvis" to start recording.')
         # Start listening and processing text
         while True:
-            recorder.text(lambda text: process_text(manager=manager, text=text))
+            recorder.text(
+                lambda text: process_text(manager=manager, text=text, agent_name="XT")
+            )
 
 
 if __name__ == "__main__":
