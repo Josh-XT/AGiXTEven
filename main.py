@@ -1,24 +1,17 @@
 import time
 import asyncio
+import threading  # New import for threading
 from RealtimeSTT import AudioToTextRecorder
 from even_glasses.bluetooth_manager import GlassesManager
 from even_glasses.commands import send_text
 from even_glasses.notification_handlers import handle_incoming_notification
 from agixtsdk import AGiXTSDK
-import time
+from datetime import datetime
 
 
 def transcribe_words(alignment_data, group_size=3, time_shift=1.0):
     """
     Processes alignment data to group words with adjusted timestamps.
-
-    Args:
-        alignment_data (dict): Alignment data from the speech synthesis.
-        group_size (int): Number of words per group.
-        time_shift (float): Time in seconds to shift the timestamps earlier.
-
-    Returns:
-        list: A list of word groups with adjusted timestamps.
     """
     chars = alignment_data["alignment"]["characters"]
     starts = alignment_data["alignment"]["character_start_times_seconds"]
@@ -48,7 +41,6 @@ def transcribe_words(alignment_data, group_size=3, time_shift=1.0):
         current_word += char
         word_end = end
 
-    # Add the last word if it exists
     if current_word:
         words.append(
             {
@@ -58,28 +50,21 @@ def transcribe_words(alignment_data, group_size=3, time_shift=1.0):
             }
         )
 
-    # Group words based on the specified group size
     grouped_words = [
         words[i : i + group_size] for i in range(0, len(words), group_size)
     ]
-
     return grouped_words
 
 
 def print_with_timestamps(grouped_words):
     """
     Prints word groups according to their timestamps.
-
-    Args:
-        grouped_words (list): List of word groups with timestamps.
     """
-
     for group in grouped_words:
         print(" ".join([word["word"] for word in group]))
         time.sleep(group[-1]["end_time"] - group[0]["start_time"])
         print(
-            f"Start: {group[0]['start_time']:.2f}s, "
-            f"End: {group[-1]['end_time']:.2f}s"
+            f"Start: {group[0]['start_time']:.2f}s, End: {group[-1]['end_time']:.2f}s"
         )
 
 
@@ -88,7 +73,6 @@ async def get_manager():
     connected = await manager.scan_and_connect()
 
     if connected:
-        # Assign notification handlers
         if manager.left_glass:
             manager.left_glass.notification_handler = handle_incoming_notification
         if manager.right_glass:
@@ -111,14 +95,10 @@ def my_stop_callback(manager):
 def display_message(manager, alignment_data, group_size=7):
     """
     Displays a message on the screen.
-
-    Args:
-        message (str): The message to display.
     """
     words = transcribe_words(alignment_data, group_size=group_size)
     for group in words:
         print(" ".join([word["word"] for word in group]))
-
         asyncio.run(
             send_text(
                 manager=manager,
@@ -132,14 +112,32 @@ def display_message(manager, alignment_data, group_size=7):
 def process_text(manager, text, agent_name="XT"):
     print(f"Transcribed text: {text}")
     asyncio.run(send_text(manager=manager, text_message=text, duration=1))
-    # Send text to AGiXT
+
+    # Create an event to signal completion of the AGiXT call
+    stop_event = threading.Event()
+
+    # Background thread: send "Thinking..." every 3 seconds until stopped
+    def periodic_thinking():
+        while not stop_event.wait(3):  # Waits 3 seconds or until event is set
+            asyncio.run(
+                send_text(manager=manager, text_message="Thinking...", duration=1)
+            )
+
+    thinking_thread = threading.Thread(target=periodic_thinking)
+    thinking_thread.start()
+
+    # Make the blocking call to AGiXT
     agixt = AGiXTSDK()
-    asyncio.run(send_text(manager=manager, text_message="Thinking...", duration=2))
     response = agixt.prompt_agent(
         agent_name=agent_name,
         prompt_name="Think About It",
         prompt_args={"user_input": text},
     )
+
+    # Signal the periodic thread to stop and wait for it to finish
+    stop_event.set()
+    thinking_thread.join()
+
     print(f"AGiXT response: {response}")
     display_message(manager, response)
     return response
@@ -147,7 +145,6 @@ def process_text(manager, text, agent_name="XT"):
 
 async def main():
     manager = await get_manager()
-
     with AudioToTextRecorder(
         model="small",
         wake_words="jarvis",
@@ -158,7 +155,6 @@ async def main():
         wake_word_buffer_duration=1,
     ) as recorder:
         print('Say "Jarvis" to start recording.')
-        # Start listening and processing text
         while True:
             recorder.text(
                 lambda text: process_text(manager=manager, text=text, agent_name="XT")
