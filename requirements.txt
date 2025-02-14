@@ -1,0 +1,5 @@
+even_glasses==0.1.11
+RealtimeSTT==0.3.81
+python-dotenv
+asyncio
+agixtsdk
